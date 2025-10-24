@@ -6,7 +6,9 @@ on:
   workflow_dispatch:
 
 env:
-  AWS_REGION: eu-west-3
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+  K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
@@ -29,6 +31,17 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Ensure ECR repositories exist
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          SERVICES=("vote" "vote-ui" "result" "result-ui" "worker")
+          for SERVICE in "${SERVICES[@]}"; do
+            echo "Checking ECR repository: $SERVICE"
+            aws ecr describe-repositories --repository-names $SERVICE >/dev/null 2>&1 || \
+            aws ecr create-repository --repository-name $SERVICE --region $AWS_REGION
+          done
+
       - name: Build and Push Docker images
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -36,7 +49,6 @@ jobs:
         run: |
           echo "Using ECR Registry: $ECR_REGISTRY"
           SERVICES=("vote" "vote-ui" "result" "result-ui" "worker")
-
           for SERVICE in "${SERVICES[@]}"; do
             IMAGE_URI="$ECR_REGISTRY/$SERVICE:$IMAGE_TAG"
             echo "Building $SERVICE → $IMAGE_URI"
@@ -45,20 +57,12 @@ jobs:
           done
 
       - name: Confirm pushed images
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |
-          aws ecr describe-images --repository-name vote --registry-id $(echo $ECR_REGISTRY | cut -d'.' -f1) | jq '.imageDetails | length'
+        run: echo "All Voting App images pushed to ECR."
 
   deploy-to-eks:
-    name: Deploy to Amazon EKS
+    name: Deploy Voting App to EKS
     needs: build-and-push
     runs-on: ubuntu-latest
-
-    env:
-      ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
-      EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
-      K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
 
     steps:
       - name: Checkout code
@@ -69,32 +73,21 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Update kubeconfig for EKS cluster
-        run: aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_REGION
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
 
-      - name: Apply Kubernetes manifests
-        run: |
-          echo "Applying Kubernetes manifests..."
-          kubectl apply -f k8s/
-
-      - name: Update deployments with latest images
+      - name: Update Kubernetes deployments
+        env:
+          ECR_REGISTRY: ${{ needs.build-and-push.outputs.registry }}
         run: |
           SERVICES=("vote" "vote-ui" "result" "result-ui" "worker")
-
           for SERVICE in "${SERVICES[@]}"; do
-            echo "Updating $SERVICE deployment..."
-            kubectl -n $K8S_NAMESPACE set image deployment/${SERVICE}-deployment \
-              ${SERVICE}=${ECR_REGISTRY}/${SERVICE}:${IMAGE_TAG} --record || true
+            echo "Updating deployment for $SERVICE..."
+            kubectl -n ${{ secrets.K8S_NAMESPACE }} set image deployment/${SERVICE}-deployment ${SERVICE}=${{ steps.login-ecr.outputs.registry }}/${SERVICE}:${{ github.sha }} --record || true
           done
 
-      - name: Verify rollout
-        run: |
-          echo "Waiting for deployments to complete..."
-          for SERVICE in "vote" "vote-ui" "result" "result-ui" "worker"; do
-            kubectl -n $K8S_NAMESPACE rollout status deployment/${SERVICE}-deployment --timeout=180s || true
-          done
-
-          echo "Current pod status:"
-          kubectl -n $K8S_NAMESPACE get pods -o wide
+          echo "Waiting for rollouts..."
+          kubectl -n ${{ secrets.K8S_NAMESPACE }} rollout status deployment --timeout=180s
+          kubectl -n ${{ secrets.K8S_NAMESPACE }} get pods -o wide
