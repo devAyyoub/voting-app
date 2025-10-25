@@ -82,7 +82,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Connect to EKS Cluster
-        run: aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_REGION
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER_NAME
 
       - name: Deploy via Helm
         run: |
