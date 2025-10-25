@@ -15,6 +15,8 @@ jobs:
   build-and-push:
     name: Build and Push ARM64 Docker Images to ECR (with cache)
     runs-on: ubuntu-latest
+    outputs:
+      ecr_registry: ${{ steps.extract-registry.outputs.ecr_registry }}   # ✅ use explicit step id
 
     steps:
       - name: Checkout code
@@ -30,6 +32,10 @@ jobs:
       - name: Log in to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Extract ECR registry to output
+        id: extract-registry
+        run: echo "ecr_registry=${{ steps.login-ecr.outputs.registry }}" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -67,9 +73,6 @@ jobs:
             fi
           done
 
-    outputs:
-      ecr_registry: ${{ steps.login-ecr.outputs.registry }}
-
   deploy-to-eks:
     name: Deploy Voting App to EKS
     needs: build-and-push
@@ -91,7 +94,7 @@ jobs:
 
       - name: Deploy Helm Chart
         env:
-          ECR_REGISTRY: ${{ needs.build-and-push.outputs.ecr_registry }}
+          ECR_REGISTRY: ${{ needs.build-and-push.outputs.ecr_registry }}   # ✅ now correctly propagated
         run: |
           echo "Using registry: $ECR_REGISTRY"
           helm upgrade --install voting ./voting-app \
