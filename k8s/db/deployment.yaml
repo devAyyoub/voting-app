@@ -1,9 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: db
+  namespace: voting-app
   labels:
     app: db
-  name: db
 spec:
   replicas: 1
   selector:
@@ -15,8 +16,10 @@ spec:
         app: db
     spec:
       containers:
-        - image: postgres:15.3-alpine3.18
-          name: postgres
+        - name: db
+          image: postgres:15.0-alpine3.16
+          ports:
+            - containerPort: 5432
           env:
             - name: POSTGRES_USER
               valueFrom:
@@ -28,18 +31,3 @@ spec:
                 secretKeyRef:
                   name: db
                   key: password
-          ports:
-            - containerPort: 5432
-          resources:
-            requests:
-              memory: 128Mi
-              cpu: 100m
-            limits:
-              memory: 128Mi
-              cpu: 100m
-          volumeMounts:
-            - mountPath: /var/run/postgresql
-              name: run
-      volumes:
-        - name: run
-          emptyDir: {}

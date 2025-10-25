@@ -1,35 +1,32 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: result
   labels:
-    app: worker
-  name: worker
+    app: result
 spec:
-  replicas: 1
+  replicas: {{ .Values.result.replicas }}
   selector:
     matchLabels:
-      app: worker
+      app: result
   template:
     metadata:
       labels:
-        app: worker
+        app: result
     spec:
       containers:
-        - image: voting/worker:v1.0.15
-          name: worker
+        - name: result
+          image: "{{ .Values.result.image.repository }}:{{ .Values.result.image.tag }}"
+          ports:
+            - containerPort: {{ .Values.result.containerPort }}
           env:
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
-                  name: db
+                  name: {{ .Values.db.secretName }}
                   key: username
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: db
+                  name: {{ .Values.db.secretName }}
                   key: password
-          imagePullPolicy: Always
-          resources:
-            requests:
-              memory: 64Mi
-              cpu: 50m
