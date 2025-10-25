@@ -46,9 +46,13 @@ jobs:
         run: |
           SERVICES=("vote" "vote-ui" "result" "result-ui" "worker")
           for SERVICE in "${SERVICES[@]}"; do
-            IMAGE_URI="$ECR_REGISTRY/$SERVICE:${{ github.sha }}"
+            IMAGE_URI="$ECR_REGISTRY/$SERVICE:${IMAGE_TAG}"
             echo "Building $SERVICE → $IMAGE_URI"
-            docker build -t "$IMAGE_URI" "./$SERVICE"
+            if [ "$SERVICE" = "worker" ]; then
+              docker build -t "$IMAGE_URI" -f "./$SERVICE/src/Dockerfile" "./$SERVICE/src"
+            else
+              docker build -t "$IMAGE_URI" "./$SERVICE"
+            fi
             docker push "$IMAGE_URI"
           done
 
