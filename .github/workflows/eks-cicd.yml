@@ -15,6 +15,8 @@ jobs:
   build-and-push:
     name: Build and Push Multi-Arch Docker Images to ECR
     runs-on: ubuntu-latest
+    outputs:
+      ecr_registry: ${{ steps.login-ecr.outputs.registry }}
 
     steps:
       - name: Checkout code
@@ -86,7 +88,7 @@ jobs:
 
       - name: Deploy Helm Chart
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REGISTRY: ${{ needs.build-and-push.outputs.ecr_registry }}
         run: |
           helm upgrade --install voting ./voting-app \
             --namespace ${{ secrets.K8S_NAMESPACE }} \

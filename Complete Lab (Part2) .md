@@ -165,6 +165,7 @@ Attach these **three managed policies**:
 ```
 AmazonEKSWorkerNodePolicy
 AmazonEC2ContainerRegistryReadOnly
+
 ```
 
 Click **Next**, then name it:
@@ -683,98 +684,111 @@ Once you’ve understood each part, here’s the full workflow together:
 name: Voting App – CI/CD to AWS EKS
 
 on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+   push:
+      branches: [ main ]
+   workflow_dispatch:
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
-  K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
-  IMAGE_TAG: ${{ github.sha }}
+   AWS_REGION: ${{ secrets.AWS_REGION }}
+   EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+   K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
+   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  build-and-push:
-    name: Build and Push Docker images to ECR
-    runs-on: ubuntu-latest
+   build-and-push:
+      name: Build and Push Multi-Arch Docker Images to ECR
+      runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      steps:
+         - name: Checkout code
+           uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+         - name: Configure AWS credentials
+           uses: aws-actions/configure-aws-credentials@v4
+           with:
+              aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+              aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+              aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Log in to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+         - name: Log in to Amazon ECR
+           id: login-ecr
+           uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Ensure ECR repositories exist
-        run: |
-          SERVICES=("vote" "vote-ui" "result" "result-ui" "worker")
-          for SERVICE in "${SERVICES[@]}"; do
-            echo "Ensuring repo $SERVICE"
-            aws ecr describe-repositories --repository-names $SERVICE >/dev/null 2>&1 || \
-            aws ecr create-repository --repository-name $SERVICE --region $AWS_REGION
-          done
+         - name: Set up Docker Buildx
+           uses: docker/setup-buildx-action@v3
 
-      - name: Build and Push Docker images
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |
-          SERVICES=("vote" "vote-ui" "result" "result-ui" "worker")
-          for SERVICE in "${SERVICES[@]}"; do
-            IMAGE_URI="$ECR_REGISTRY/$SERVICE:${{ github.sha }}"
-            echo "Building $SERVICE → $IMAGE_URI"
-            docker build -t "$IMAGE_URI" "./$SERVICE"
-            docker push "$IMAGE_URI"
-          done
+         - name: Ensure ECR repositories exist
+           run: |
+              SERVICES=("vote" "vote-ui" "result" "result-ui" "worker")
+              for SERVICE in "${SERVICES[@]}"; do
+                echo "Ensuring repo $SERVICE"
+                aws ecr describe-repositories --repository-names $SERVICE >/dev/null 2>&1 || \
+                aws ecr create-repository --repository-name $SERVICE --region $AWS_REGION
+              done
 
-  deploy-to-eks:
-    name: Deploy Voting App to EKS
-    needs: build-and-push
-    runs-on: ubuntu-latest
+         - name: Build and Push Multi-Arch Docker Images
+           env:
+              ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+           run: |
+              SERVICES=("vote" "vote-ui" "result" "result-ui" "worker")
+              for SERVICE in "${SERVICES[@]}"; do
+                IMAGE_URI="$ECR_REGISTRY/$SERVICE:${IMAGE_TAG}"
+                echo "Building $SERVICE → $IMAGE_URI"
+                if [ "$SERVICE" = "worker" ]; then
+                  docker buildx build \
+                    --platform linux/amd64,linux/arm64 \
+                    -t "$IMAGE_URI" \
+                    -f "./$SERVICE/src/Dockerfile" "./$SERVICE/src" \
+                    --push
+                else
+                  docker buildx build \
+                    --platform linux/amd64,linux/arm64 \
+                    -t "$IMAGE_URI" "./$SERVICE" \
+                    --push
+                fi
+              done
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+   deploy-to-eks:
+      name: Deploy Voting App to EKS
+      needs: build-and-push
+      runs-on: ubuntu-latest
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+      steps:
+         - name: Checkout code
+           uses: actions/checkout@v4
 
-      - name: Connect to EKS cluster
-        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+         - name: Configure AWS credentials
+           uses: aws-actions/configure-aws-credentials@v4
+           with:
+              aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+              aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+              aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Deploy Helm Chart
-        env:
-          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
-        run: |
-          helm upgrade --install voting ./voting-app \
-            --namespace ${{ secrets.K8S_NAMESPACE }} \
-            --create-namespace \
-            --set vote.image.repository=$ECR_REGISTRY/vote \
-            --set vote.image.tag=${{ github.sha }} \
-            --set voteUi.image.repository=$ECR_REGISTRY/vote-ui \
-            --set voteUi.image.tag=${{ github.sha }} \
-            --set result.image.repository=$ECR_REGISTRY/result \
-            --set result.image.tag=${{ github.sha }} \
-            --set resultUi.image.repository=$ECR_REGISTRY/result-ui \
-            --set resultUi.image.tag=${{ github.sha }} \
-            --set worker.image.repository=$ECR_REGISTRY/worker \
-            --set worker.image.tag=${{ github.sha }}
+         - name: Connect to EKS cluster
+           run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
 
-      - name: Verify deployment
-        run: |
-          kubectl get pods -n ${{ secrets.K8S_NAMESPACE }}
-          kubectl get svc -n ${{ secrets.K8S_NAMESPACE }}
+         - name: Deploy Helm Chart
+           env:
+              ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+           run: |
+              helm upgrade --install voting ./voting-app \
+                --namespace ${{ secrets.K8S_NAMESPACE }} \
+                --create-namespace \
+                --set vote.image.repository=$ECR_REGISTRY/vote \
+                --set vote.image.tag=${{ github.sha }} \
+                --set voteUi.image.repository=$ECR_REGISTRY/vote-ui \
+                --set voteUi.image.tag=${{ github.sha }} \
+                --set result.image.repository=$ECR_REGISTRY/result \
+                --set result.image.tag=${{ github.sha }} \
+                --set resultUi.image.repository=$ECR_REGISTRY/result-ui \
+                --set resultUi.image.tag=${{ github.sha }} \
+                --set worker.image.repository=$ECR_REGISTRY/worker \
+                --set worker.image.tag=${{ github.sha }}
+
+         - name: Verify deployment
+           run: |
+              kubectl get pods -n ${{ secrets.K8S_NAMESPACE }}
+              kubectl get svc -n ${{ secrets.K8S_NAMESPACE }}
 ```
 
 ---
