@@ -53,10 +53,18 @@ jobs:
         run: |
           for svc in vote vote-ui result result-ui worker; do
             echo "🚀 Building $svc → $ECR_REGISTRY/$svc:$IMAGE_TAG"
-            docker buildx build --platform linux/arm64 \
-              --cache-from type=local,src=/tmp/.buildx-cache \
-              --cache-to type=local,dest=/tmp/.buildx-cache,mode=max \
-              -t $ECR_REGISTRY/$svc:$IMAGE_TAG "./$svc" --push
+            if [ "$svc" = "worker" ]; then
+              docker buildx build --platform linux/arm64 \
+                --cache-from type=local,src=/tmp/.buildx-cache \
+                --cache-to type=local,dest=/tmp/.buildx-cache,mode=max \
+                -t $ECR_REGISTRY/$svc:$IMAGE_TAG \
+                -f "./$svc/src/Dockerfile" "./$svc/src" --push
+            else
+              docker buildx build --platform linux/arm64 \
+                --cache-from type=local,src=/tmp/.buildx-cache \
+                --cache-to type=local,dest=/tmp/.buildx-cache,mode=max \
+                -t $ECR_REGISTRY/$svc:$IMAGE_TAG "./$svc" --push
+            fi
           done
 
   deploy:
