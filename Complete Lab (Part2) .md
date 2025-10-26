@@ -655,6 +655,18 @@ needs: build-and-push
       --set worker.image.tag=${{ github.sha }}
 ```
 
+By default, the Helm chart exposes **UI services** (`vote-ui`, `result-ui`) as `NodePort` — suitable for local clusters (like Minikube).
+On AWS EKS, we override this behavior in the CI/CD pipeline to create **public LoadBalancers** automatically.
+
+This is achieved using the following flags in the Helm command:
+
+```bash
+--set voteUi.service.type=LoadBalancer \
+--set resultUi.service.type=LoadBalancer
+```
+
+This tells Kubernetes to create an **internet-facing AWS LoadBalancer** for both UIs when deployed on EKS.
+
 💡 **Hint:**
 `helm upgrade --install` ensures that:
 
@@ -781,7 +793,9 @@ jobs:
                 --set resultUi.image.repository=$ECR_REGISTRY/result-ui \
                 --set resultUi.image.tag=$IMAGE_TAG \
                 --set worker.image.repository=$ECR_REGISTRY/worker \
-                --set worker.image.tag=$IMAGE_TAG
+                --set worker.image.tag=$IMAGE_TAG \
+                --set voteUi.service.type=LoadBalancer \
+                --set resultUi.service.type=LoadBalancer
 
          - name: Verify Deployment
            run: |
