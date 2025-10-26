@@ -40,7 +40,7 @@ jobs:
             ${{ runner.os }}-buildx-
 
       - name: Login to Amazon ECR
-        run: aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_REGISTRY
+        run: aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin 618180422329.dkr.ecr.eu-north-1.amazonaws.com
 
       - name: Ensure ECR repositories exist
         run: |
