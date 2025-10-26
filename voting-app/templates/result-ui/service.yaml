@@ -4,6 +4,10 @@ metadata:
   name: result-ui
   labels:
     app: result-ui
+  {{- if eq .Values.resultUi.service.type "LoadBalancer" }}
+  annotations:
+    {{- toYaml .Values.resultUi.service.annotations.loadBalancer | nindent 4 }}
+  {{- end }}
 spec:
   type: {{ .Values.resultUi.service.type }}
   ports:

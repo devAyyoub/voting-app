@@ -59,10 +59,15 @@ voteUi:
     tag: v1.0.19
   containerPort: 80
   service:
-    type: NodePort
+    type: NodePort          # ← change ici entre NodePort ou LoadBalancer
     port: 80
     targetPort: 80
     nodePort: 31000
+    annotations:
+      loadBalancer:
+        service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+        service.beta.kubernetes.io/aws-load-balancer-type: external
+
 
 # -----------
 # Result API
@@ -88,10 +93,15 @@ resultUi:
     tag: v1.0.15
   containerPort: 80
   service:
-    type: NodePort
+    type: NodePort          # ou LoadBalancer
     port: 80
     targetPort: 80
     nodePort: 31001
+    annotations:
+      loadBalancer:
+        service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+        service.beta.kubernetes.io/aws-load-balancer-type: external
+
 
 # ------------
 # Worker

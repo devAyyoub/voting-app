@@ -4,6 +4,10 @@ metadata:
   name: vote-ui
   labels:
     app: vote-ui
+  {{- if eq .Values.voteUi.service.type "LoadBalancer" }}
+  annotations:
+    {{- toYaml .Values.voteUi.service.annotations.loadBalancer | nindent 4 }}
+  {{- end }}
 spec:
   type: {{ .Values.voteUi.service.type }}
   ports:

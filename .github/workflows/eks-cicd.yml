@@ -52,7 +52,7 @@ jobs:
       - name: Build and Push ARM64 Docker Images
         run: |
           for svc in vote vote-ui result result-ui worker; do
-            echo "🚀 Building $svc → $ECR_REGISTRY/$svc:$IMAGE_TAG"
+            echo "Building $svc → $ECR_REGISTRY/$svc:$IMAGE_TAG"
             if [ "$svc" = "worker" ]; then
               docker buildx build --platform linux/arm64 \
                 --cache-from type=local,src=/tmp/.buildx-cache \
@@ -86,7 +86,7 @@ jobs:
 
       - name: Deploy via Helm
         run: |
-          echo "🧩 Using registry: $ECR_REGISTRY"
+          echo "Using registry: $ECR_REGISTRY"
           helm upgrade --install voting ./voting-app \
             --namespace $K8S_NAMESPACE --create-namespace \
             --set vote.image.repository=$ECR_REGISTRY/vote \
@@ -98,7 +98,9 @@ jobs:
             --set resultUi.image.repository=$ECR_REGISTRY/result-ui \
             --set resultUi.image.tag=$IMAGE_TAG \
             --set worker.image.repository=$ECR_REGISTRY/worker \
-            --set worker.image.tag=$IMAGE_TAG
+            --set worker.image.tag=$IMAGE_TAG \
+            --set voteUi.service.type=LoadBalancer \
+            --set resultUi.service.type=LoadBalancer
 
       - name: Verify Deployment
         run: |
