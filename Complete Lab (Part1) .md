@@ -13,6 +13,99 @@ By the end of this lab, you will be able to:
 
 ---
 
+## **0. Get Your Own GitHub Repository**
+
+Before starting to modify manifests or Helm charts, you will work in **your own GitHub repository**.
+The base project you cloned already contains all the labs, source code, and configurations.
+
+---
+
+### **2.1 – Clone the Starter Project**
+
+Clone the shared training repository (provided by your instructor):
+
+```bash
+git clone git@github.com:h4mdi/deploy-eks.git
+cd deploy-eks
+```
+
+This directory already includes everything:
+
+```
+Complete Lab (Part1).md
+Complete Lab (Part2).md
+compose.yaml
+k8s/
+.github/workflows/
+vote/, result/, worker/, etc.
+```
+
+---
+
+### **2.2 – Remove the Old Remote Origin**
+
+The cloned repository still points to the origin GitHub.
+You must detach it to push to your own account.
+
+```bash
+git remote remove origin
+```
+
+Check that the remote is gone:
+
+```bash
+git remote -v
+```
+
+It should return nothing.
+
+---
+
+### **2.3 – Create Your Own Repository on GitHub**
+
+1. Go to [https://github.com/new](https://github.com/new)
+2. Fill in:
+
+| Field               | Example                                  |
+| ------------------- | ---------------------------------------- |
+| **Repository name** | `voting-app-yourname`                    |
+| **Description**     | “My version of the Voting App labs”      |
+| **Visibility**      | Public *(recommended for this training)* |
+
+3. Click **Create repository**.
+4. Copy the **SSH address** displayed (for example):
+
+   ```
+   git@github.com:h4mdi/voting-app-yourname.git
+   ```
+
+---
+
+### **2.4 – Connect and Push Your Project**
+
+Back in your local project folder:
+
+```bash
+git remote add origin git@github.com:<your-username>/voting-app-yourname.git
+git branch -M main
+git push -u origin main
+```
+
+Your personal repository now contains the full Voting App lab environment.
+
+---
+
+### **2.5 – Verify**
+
+Check on your GitHub account — you should see:
+
+* `k8s/` folder
+* `.github/workflows/` folder
+* `vote/`, `result/`, `worker/`, etc.
+* `Complete Lab (Part1).md` and `Complete Lab (Part2).md`
+
+---
+
 ## **1. Background**
 
 ### **From Compose to Kubernetes**
@@ -70,7 +163,14 @@ services:
 To stay organized, create a directory for each component:
 
 ```bash
-mkdir -p k8s/{vote,vote-ui,result,result-ui,worker,redis,db}
+mkdir k8s
+mkdir k8s\vote
+mkdir k8s\vote-ui
+mkdir k8s\result
+mkdir k8s\result-ui
+mkdir k8s\worker
+mkdir k8s\redis
+mkdir k8s\db
 ```
 
 Each folder will later contain the following (as needed):
