@@ -1,38 +1,46 @@
-# **Complete Lab (part1) – From Docker Compose to Kubernetes and Helm Packaging**
+Oui. Voici une version **plus développée**, en anglais, toujours **orientée apprentissage** :
+chaque section donne le contexte, les étapes à suivre, des explications, et un **hint** à ouvrir seulement en cas de blocage.
+Le tout est prêt à être intégré dans Moodle, MkDocs ou GitHub Pages.
+
+---
+
+# **Complete Lab (Part 1) – From Docker Compose to Kubernetes and Helm Packaging**
 
 ---
 
 ## **Objectives**
 
-By the end of this lab, you will:
+By the end of this lab, you will be able to:
 
-* Translate each service from a Docker Compose stack into Kubernetes manifests.
-* Organize and deploy the Voting App on a Kubernetes cluster.
-* Package all manifests into a Helm chart for reuse.
+* Understand how each part of a Docker Compose stack maps to Kubernetes resources.
+* Create the complete Voting App manually using raw Kubernetes manifests.
+* Organize your manifests properly for maintainability.
+* Prepare everything for Helm packaging in Part 2.
 
 ---
 
 ## **1. Background**
 
-**Docker Compose** allows defining multi-container apps easily for local use.
-**Kubernetes** provides the production-ready equivalent — but requires explicit definitions.
+### **From Compose to Kubernetes**
 
-| Concept               | Docker Compose | Kubernetes Equivalent           |
-| --------------------- | -------------- | ------------------------------- |
-| Container definition  | `services:`    | `Deployment`                    |
-| Networking            | `networks:`    | `Service` (ClusterIP/NodePort)  |
-| Dependencies          | `depends_on:`  | Service DNS + startup order     |
-| Environment variables | `environment:` | `env` or `ConfigMap/Secret`     |
-| Persistent data       | `volumes:`     | `PersistentVolumeClaim`         |
-| Port exposure         | `ports:`       | `Service` (NodePort or Ingress) |
+Docker Compose allows quick local orchestration, but it hides many details.
+Kubernetes requires explicit resources for deployments, configuration, and networking.
 
-You’ll convert the **Voting App** step by step, keeping the logic clear and minimal.
+| Concept               | Docker Compose Keyword | Kubernetes Equivalent            | Purpose                    |
+| --------------------- | ---------------------- | -------------------------------- | -------------------------- |
+| Container definition  | `services:`            | `Deployment`                     | Run one or more pods       |
+| Networking            | `networks:`            | `Service` (ClusterIP / NodePort) | Connect pods reliably      |
+| Dependencies          | `depends_on:`          | Service DNS + readiness probes   | Define communication       |
+| Environment variables | `environment:`         | `env`, `ConfigMap`, `Secret`     | Inject runtime values      |
+| Persistent data       | `volumes:`             | `PersistentVolumeClaim` (PVC)    | Keep data after restart    |
+| Port exposure         | `ports:`               | `Service` / `Ingress`            | Make accessible externally |
 
 ---
 
-## **2. Starting Point: Your Docker Compose File**
+## **2. Starting Point – Docker Compose File**
 
-Simplified version:
+Below is the simplified **Voting App** stack.
+You will progressively translate each service into Kubernetes manifests.
 
 ```yaml
 services:
@@ -63,428 +71,242 @@ services:
 
 ---
 
-## **3. Create a Folder for Kubernetes Manifests**
+## **3. Project Structure**
+
+To stay organized, create a directory for each component:
 
 ```bash
-mkdir k8s
-mkdir k8s/vote, k8s/vote-ui, k8s/result, k8s/result-ui, k8s/worker, k8s/redis, k8s/db
+mkdir -p k8s/{vote,vote-ui,result,result-ui,worker,redis,db}
 ```
 
-Each subfolder will contain its own `deployment.yaml` and `service.yaml`.
+Each folder will later contain the following (as needed):
+
+| File Name                     | Purpose                                                             |
+| ----------------------------- | ------------------------------------------------------------------- |
+| `deployment.yaml`             | Defines how the application runs (replicas, container, environment) |
+| `service.yaml`                | Defines internal/external networking                                |
+| `secret.yaml`                 | Stores sensitive data like passwords                                |
+| `configmap.yaml` *(optional)* | Stores environment variables or configuration files                 |
 
 ---
 
 ## **4. Translate Each Service**
 
+You will now create the manifests manually.
+Read each goal carefully before creating files.
+
 ---
 
-### **4.1 PostgreSQL (db)**
+### **4.1 PostgreSQL (Database)**
 
-**Compose → Deployment + Service + Secret**
+**Purpose:**
+Provides persistent storage for votes and results.
 
-#### Secret (`k8s/db/secret.yaml`)
+**You need to create:**
 
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: db
-  namespace: voting-app
-type: Opaque
-stringData:
-  username: postgres
-  password: postgres
-```
+1. A **Secret** for credentials (`POSTGRES_USER`, `POSTGRES_PASSWORD`)
+2. A **Deployment** running PostgreSQL
+3. A **Service** to make the DB reachable by name inside the cluster
 
-#### Deployment (`k8s/db/deployment.yaml`)
+**Steps:**
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: db
-  namespace: voting-app
-  labels:
-    app: db
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: db
-  template:
-    metadata:
-      labels:
-        app: db
-    spec:
-      containers:
-        - name: db
-          image: postgres:15.0-alpine3.16
-          ports:
-            - containerPort: 5432
-          env:
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: db
-                  key: username
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: db
-                  key: password
-```
+* Use image `postgres:15.0-alpine3.16`
+* Use label `app: db`
+* Expose port 5432 internally
+* Mount credentials from the Secret in the environment section
+* Use `ClusterIP` type Service
 
-#### Service (`k8s/db/service.yaml`)
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: db
-  namespace: voting-app
-  labels:
-    app: db
-spec:
-  type: ClusterIP
-  ports:
-    - port: 5432
-      targetPort: 5432
-  selector:
-    app: db
-```
-
-**Hint:**
-ClusterIP makes it reachable from inside the cluster (`db:5432`).
-Use NodePort only for frontends that users must access.
+<details>
+<summary>💡 Hint</summary>
+Your pods will connect to the DB using the internal DNS name:  
+`db.voting-app.svc.cluster.local:5432`.  
+NodePort is not needed because only backend components access the database.
+</details>
 
 ---
 
 ### **4.2 Redis**
 
-#### Deployment (`k8s/redis/deployment.yaml`)
+**Purpose:**
+Acts as a fast in-memory store for vote caching and message exchange.
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: redis
-  namespace: voting-app
-  labels:
-    app: redis
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: redis
-  template:
-    metadata:
-      labels:
-        app: redis
-    spec:
-      containers:
-        - name: redis
-          image: redis:7.0.7-alpine3.17
-          ports:
-            - containerPort: 6379
-```
+**You need to create:**
 
-#### Service (`k8s/redis/service.yaml`)
+* One **Deployment** running `redis:7.0.7-alpine3.17`
+* One **Service** exposing it internally
 
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: redis
-  namespace: voting-app
-  labels:
-    app: redis
-spec:
-  type: ClusterIP
-  ports:
-    - port: 6379
-      targetPort: 6379
-  selector:
-    app: redis
-```
+**Steps:**
+
+* Label both resources `app: redis`
+* Set the container port to 6379
+* Use `ClusterIP` Service
+
+<details>
+<summary>💡 Hint</summary>
+Redis requires no persistent volume here.  
+The hostname `redis` will automatically resolve for other pods.
+</details>
 
 ---
 
-### **4.3 Vote**
+### **4.3 Vote (Backend)**
 
-#### Deployment (`k8s/vote/deployment.yaml`)
+**Purpose:**
+Handles API requests to record votes into Redis.
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: vote
-  namespace: voting-app
-  labels:
-    app: vote
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: vote
-  template:
-    metadata:
-      labels:
-        app: vote
-    spec:
-      containers:
-        - name: vote
-          image: voting/vote:v1.0.13
-          ports:
-            - containerPort: 5000
-          env:
-            - name: REDIS_HOST
-              value: redis
-```
+**You need to create:**
 
-#### Service (`k8s/vote/service.yaml`)
+* A **Deployment** running the container image `voting/vote:v1.0.13`
+* A **Service** for internal communication
 
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: vote
-  namespace: voting-app
-  labels:
-    app: vote
-spec:
-  type: ClusterIP
-  ports:
-    - port: 5000
-      targetPort: 5000
-  selector:
-    app: vote
-```
+**Steps:**
+
+* Label resources `app: vote`
+* Expose container port 5000
+* Add environment variable `REDIS_HOST=redis`
+* Service type `ClusterIP`
+
+<details>
+<summary>💡 Hint</summary>
+The Vote service talks to Redis through DNS (`redis:6379`).  
+No database connection required at this stage.
+</details>
 
 ---
 
-### **4.4 Vote UI**
+### **4.4 Vote UI (Frontend)**
 
-#### Deployment (`k8s/vote-ui/deployment.yaml`)
+**Purpose:**
+Public interface where users can cast votes.
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: vote-ui
-  namespace: voting-app
-  labels:
-    app: vote-ui
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: vote-ui
-  template:
-    metadata:
-      labels:
-        app: vote-ui
-    spec:
-      containers:
-        - name: vote-ui
-          image: voting/vote-ui:v1.0.19
-          ports:
-            - containerPort: 80
-```
+**You need to create:**
 
-#### Service (`k8s/vote-ui/service.yaml`)
+* A **Deployment** running `voting/vote-ui:v1.0.19`
+* A **Service** that allows external browser access
 
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: vote-ui
-  namespace: voting-app
-  labels:
-    app: vote-ui
-spec:
-  type: NodePort
-  ports:
-    - port: 80
-      targetPort: 80
-      nodePort: 31000
-  selector:
-    app: vote-ui
-```
+**Steps:**
 
-**Hint:**
-NodePort exposes it externally via any worker node IP:
-`http://<node-ip>:31000`
+* Label `app: vote-ui`
+* Expose port 80 inside the container
+* Use `NodePort` type Service
+* Assign a port (e.g. 31000) for external access
+
+<details>
+<summary>💡 Hint</summary>
+You will reach it using  
+`http://<node_ip>:31000`.  
+This simulates exposing an app to end users.
+</details>
 
 ---
 
-### **4.5 Result**
+### **4.5 Result (Backend)**
 
-#### Deployment (`k8s/result/deployment.yaml`)
+**Purpose:**
+Reads data from the database to compute vote results.
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: result
-  namespace: voting-app
-  labels:
-    app: result
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: result
-  template:
-    metadata:
-      labels:
-        app: result
-    spec:
-      containers:
-        - name: result
-          image: voting/result:v1.0.16
-          ports:
-            - containerPort: 5000
-          env:
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: db
-                  key: username
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: db
-                  key: password
-```
+**You need to create:**
 
-#### Service (`k8s/result/service.yaml`)
+* A **Deployment** using image `voting/result:v1.0.16`
+* A **Service** for internal access
 
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: result
-  namespace: voting-app
-  labels:
-    app: result
-spec:
-  type: ClusterIP
-  ports:
-    - port: 5000
-      targetPort: 5000
-  selector:
-    app: result
-```
+**Steps:**
+
+* Inject credentials from the `db` Secret
+* Expose port 5000 internally
+* Use `ClusterIP` type Service
+* Label `app: result`
+
+<details>
+<summary>💡 Hint</summary>
+Result depends on the DB pod, not on Redis.  
+Check that environment variables reference the correct Secret keys.
+</details>
 
 ---
 
-### **4.6 Result UI**
+### **4.6 Result UI (Frontend)**
 
-#### Deployment (`k8s/result-ui/deployment.yaml`)
+**Purpose:**
+Displays the vote results visually.
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: result-ui
-  namespace: voting-app
-  labels:
-    app: result-ui
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: result-ui
-  template:
-    metadata:
-      labels:
-        app: result-ui
-    spec:
-      containers:
-        - name: result-ui
-          image: voting/result-ui:v1.0.15
-          ports:
-            - containerPort: 80
-```
+**You need to create:**
 
-#### Service (`k8s/result-ui/service.yaml`)
+* A **Deployment** using `voting/result-ui:v1.0.15`
+* A **Service** exposing port 80 externally
 
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: result-ui
-  namespace: voting-app
-  labels:
-    app: result-ui
-spec:
-  type: NodePort
-  ports:
-    - port: 80
-      targetPort: 80
-      nodePort: 31001
-  selector:
-    app: result-ui
-```
+**Steps:**
+
+* Label `app: result-ui`
+* Use `NodePort` type Service with port 31001
+
+<details>
+<summary>💡 Hint</summary>
+Access the results page at  
+`http://<node_ip>:31001`.  
+Make sure ports 80 and 31001 are consistent between Deployment and Service.
+</details>
 
 ---
 
 ### **4.7 Worker**
 
-#### Deployment (`k8s/worker/deployment.yaml`)
+**Purpose:**
+Background service that synchronizes data between Redis and PostgreSQL.
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: worker
-  namespace: voting-app
-  labels:
-    app: worker
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: worker
-  template:
-    metadata:
-      labels:
-        app: worker
-    spec:
-      containers:
-        - name: worker
-          image: voting/worker:v1.0.15
-          env:
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: db
-                  key: username
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: db
-                  key: password
-            - name: REDIS_HOST
-              value: redis
-            - name: DB_HOST
-              value: db
-```
+**You need to create:**
 
-**Hint:**
-The worker is internal. It doesn’t expose a Service because it only communicates via Redis and DB.
+* A **Deployment** only (no Service)
+
+**Steps:**
+
+* Image `voting/worker:v1.0.15`
+* Add environment variables:
+
+    * `REDIS_HOST=redis`
+    * `DB_HOST=db`
+    * Database credentials from Secret `db`
+* Label `app: worker`
+
+<details>
+<summary>💡 Hint</summary>
+The Worker does not expose ports because it only processes data internally.  
+It should start successfully once both Redis and DB Services are available.
+</details>
 
 ---
 
-## **5. Deploy the Full Stack**
+## **5. Namespace and Common Labels**
 
-Apply all manifests:
+Before applying manifests, create the namespace:
 
 ```bash
-kubectl create ns voting-app
-kubectl apply -R -f k8s/
-kubectl get pods,svc -n voting-app
+kubectl create namespace voting-app
 ```
+
+Always include in your YAML:
+
+```yaml
+metadata:
+  namespace: voting-app
+  labels:
+    app: <service-name>
+```
+
+This ensures consistent grouping and easier cleanup.
+
+---
+
+## **6. Test and Verify**
+
+Once all YAMLs are ready:
+
+```bash
+kubectl apply -f k8s/ --recursive
+kubectl get pods -n voting-app
+kubectl get svc -n voting-app
+```
+
 
 ![img.png](images/img.png)
 
@@ -497,6 +319,26 @@ minikube service result-ui -n parking-dev
 ![img_1.png](images/img_1.png)
 
 ![img_2.png](images/img_2.png)
+
+You should see all seven Deployments running and Services exposing the proper ports.
+
+<details>
+<summary>💡 Hint</summary>
+If some pods are stuck in `CrashLoopBackOff`, run  
+`kubectl logs <pod> -n voting-app` to debug.  
+Common issues: wrong env vars or missing Secrets.
+
+</details>
+
+---
+
+## **7. Clean Up**
+
+When done testing:
+
+```bash
+kubectl delete namespace voting-app
+```
 
 ---
 
