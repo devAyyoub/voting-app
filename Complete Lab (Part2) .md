@@ -16,7 +16,7 @@ At the end of this lab, you will:
 ## **1 – Overview**
 
 You previously packaged the app into a Helm chart and deployed it locally.
-Now, you will move that process into the cloud, with AWS as the runtime and GitHub Actions as the automation engine.
+Now, you will move that process into the cloud, with AWS and GitHub Actions as the automation engine.
 
 | Step | Tool               | Purpose                   |
 | ---- | ------------------ | ------------------------- |
@@ -30,14 +30,11 @@ Now, you will move that process into the cloud, with AWS as the runtime and GitH
 
 ## **2 – Prerequisites**
 
-| Requirement        | Description                                                  |
-| ------------------ | ------------------------------------------------------------ |
+| Requirement        | Description                                               |
+| ------------------ |-----------------------------------------------------------|
 | AWS Account        | With rights to create IAM users, ECR repos, and EKS clusters |
-| EKS Cluster        | Running (example : `voting-cluster`)                         |
-| Helm Chart         | From Lab 21 (`voting-app/`)                                  |
-| GitHub Repository  | Containing your app source and chart                         |
-| Docker Installed   | To test builds locally                                       |
-| Kubectl Configured | Access to your EKS cluster verified                          |
+| Helm Chart         | voting-app                                                |
+| GitHub Repository  | Containing your app source and chart                      |
 
 ---
 
@@ -56,11 +53,8 @@ You’ll arrive on the **Cluster configuration** page.
 
 ## **2. Choose Configuration Mode**
 
-When prompted:
 
-> **Cluster configuration options**
-
-Select → **Quick configuration (with EKS Auto Mode)**
+Select **Quick configuration (with EKS Auto Mode)** as a configuration mode.
 *(recommended for labs and production-ready defaults)*
 
 This will automatically manage networking, nodes, and storage.
@@ -69,27 +63,19 @@ This will automatically manage networking, nodes, and storage.
 
 ## **3. Cluster Configuration**
 
-| Field                  | Action                                        |
-| ---------------------- | --------------------------------------------- |
-| **Name**               | Enter a unique name, e.g. `voting-cluster`    |
-| **Kubernetes version** | Leave default (latest version)                |
-| **Cluster IAM role**   | You must create or select one (see next step) |
+| Field                  | Action                                     |
+| ---------------------- |--------------------------------------------|
+| **Name**               | Enter a unique name, e.g. `voting-cluster` |
+| **Kubernetes version** | Leave default (latest version)             |
+| **Cluster IAM role**   | AmazonEKSClusterRole                       |
 
 ---
 
-## **4. Create the Cluster IAM Role**
+## **4. AmazonEKSClusterRole **
 
 This role allows the EKS **control plane** to manage AWS resources such as networking, storage, and load balancers.
 
-### **Step 1 – Go to IAM → Roles → Create role**
-
-* **Trusted entity type:** AWS Service
-* **Use case:** search and select `EKS` → choose **EKS - Cluster**
-* Click **Next**
-
-### **Step 2 – Attach Policies**
-
-Select and attach **all five managed policies**:
+It includes the following **managed policies**:
 
 ```
 AmazonEKSClusterPolicy
@@ -100,109 +86,17 @@ AmazonEKSNetworkingPolicy
 ```
 ![img_7.png](images/img_7.png)
 
-Click **Next**, name the role:
-
-```
-AmazonEKSClusterRole
-```
-
-Then click **Create role**.
-
 ---
 
-### **Step 3 – Edit Trust Relationship**
-
-Once created:
-
-1. Open the role → **Trust relationships → Edit trust policy**
-2. Replace its JSON with:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Service": "eks.amazonaws.com"
-      },
-      "Action": [
-        "sts:AssumeRole",
-        "sts:TagSession"
-      ]
-    }
-  ]
-}
-```
-
-![img_8.png](images/img_8.png)
-
-3. Save changes.
-
----
-
-**Result:**
-You now have a cluster role named `AmazonEKSClusterRole` with the correct trust policy and permissions.
-
-Return to the EKS console → **Refresh**, and select this role under **Cluster IAM role**.
-
----
-
-## **5. Create the Node IAM Role**
-
-Worker nodes (EC2 or managed nodes) need their own IAM role so they can join the cluster and pull images.
-
-### **Step 1 – Go to IAM → Roles → Create role**
-
-* **Trusted entity type:** AWS Service
-* **Use case:** search for `EKS` → choose **EKS - Node**
-* Click **Next**
-
-### **Step 2 – Attach Policies**
-
-Attach these **three managed policies**:
+## **5. Node IAM Role**
+Select the **AmazonEKSNodeRole**. 
+Worker nodes (whether EC2 instances or managed nodes) require their own IAM role so they can join the EKS cluster and pull container images from ECR.
+This role includes the following **managed policies**:
 
 ```
 AmazonEKSWorkerNodePolicy
 AmazonEC2ContainerRegistryReadOnly
-
 ```
-
-Click **Next**, then name it:
-
-```
-AmazonEKSNodeRole
-```
-
-Click **Create role**.
-
----
-
-### **Step 3 – Verify Trust Relationship**
-
-It should look like this by default:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Service": "ec2.amazonaws.com"
-      },
-      "Action": "sts:AssumeRole"
-    }
-  ]
-}
-```
-
-If it matches, leave it as is.
-
----
-
-**Result:**
-Your **Node Role** is now ready — `AmazonEKSNodeRole`.
 
 ---
 
@@ -251,12 +145,18 @@ kubectl get nodes
 
 ![img_11.png](images/img_11.png)
 
+
+> 💡**Hint:**
+>`aws eks update-kubeconfig --name voting-cluster` is required to **connect your local terminal to your EKS cluster**.
+>
+>Without it, `kubectl` doesn’t know **where your cluster is** or **how to authenticate to it**.
+>
+>After running it, you can use `kubectl` commands to interact directly with your EKS cluster — for example, to create pods, deploy applications, or list nodes.
+
+
+You now have a **fully functional EKS Auto Mode cluster**.
+
 ---
-
-You now have a **fully functional EKS Auto Mode cluster**, ready for your **GitHub Actions CI/CD deployment **.
-
-
-
 
 ## **3 – Create an IAM User for GitHub Actions**
 
@@ -264,9 +164,9 @@ GitHub Actions needs its own AWS credentials to push images and deploy updates.
 
 1. Go to **AWS Console → IAM → Users → Add user**.
 
-2. **User name:** `github-actions`.
+2. **User name:** `github-actions-<your-name>`.
 
-3. Enable **Programmatic access** (no console access).
+3. Don't select **Provide user access to the AWS Management Console - optional** (no console access).
 
 4. Click **Next: Permissions → Attach existing policies directly**.
 
@@ -280,18 +180,18 @@ GitHub Actions needs its own AWS credentials to push images and deploy updates.
    ```
 
 6. Finish → **Create user**.
+7. **Download the credentials CSV file.**
+8. Copy the **Access Key ID** and **Secret Access Key** — you will use them later as GitHub Actions secrets:
+     * **Access Key ID →** `AWS_ACCESS_KEY_ID`
+     * **Secret Access Key →** `AWS_SECRET_ACCESS_KEY`
 
-7. Copy the **Access key ID** and **Secret access key** — they will become GitHub secrets.
-
-    * **Access key ID = AWS_ACCESS_KEY_ID**
-    * **Secret access key = AWS_SECRET_ACCESS_KEY**
 ---
 
 💡 **Hint:** This user does **not** need console access, only API access.
 
 ## 3.1 – Granting GitHub Actions Access to EKS
 
-When a GitHub Actions workflow deploys to an EKS cluster using Helm, it authenticates with an **IAM user** (for example, `github-actions`) defined by the secrets
+When a GitHub Actions workflow deploys to an EKS cluster using Helm, it authenticates with an **IAM user** (for example, `github-actions`) defined by its secrets
 `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
 
 By default, this IAM user **does not have Kubernetes-level (RBAC) permissions**, so it cannot list or create Kubernetes resources such as `secrets`, `pods`, or `deployments`.
@@ -301,15 +201,11 @@ To fix this, we must explicitly grant the IAM user **cluster-admin** privileges 
 
 ### Step 1 – Connect to the cluster using AWS CloudShell
 
-1. Open **AWS CloudShell** from the AWS Console (top right corner).
-2. Connect to your EKS cluster by running:
+1. Update your EKS cluster context by running:
 
    ```bash
-   aws eks update-kubeconfig --name extravagant-bluegrass-orca --region eu-north-1
+   aws eks update-kubeconfig --name voting-cluster
    ```
-
-   This command configures `kubectl` to communicate with your EKS cluster.
-
 ---
 
 ### Step 2 – Create a ClusterRoleBinding for the GitHub IAM user
@@ -328,13 +224,19 @@ roleRef:
   name: cluster-admin
 subjects:
   - kind: User
-    name: arn:aws:iam::618180422329:user/github-actions
+    name: arn:aws:iam::618180422329:user/github-actions<your-name>
     apiGroup: rbac.authorization.k8s.io
 EOF
 ```
 
 This creates a **ClusterRoleBinding** named `github-actions-admin` that links the IAM user `github-actions` to the `cluster-admin` role.
 It gives the GitHub Actions workflow full access to manage all Kubernetes resources in the cluster.
+
+⚠️ Important:
+Don’t forget to replace <your-name> with your actual IAM user name.
+
+> Note: The cluster-admin role is a default Kubernetes role that provides the highest level of privileges across all namespaces in the cluster. It is typically used only for automation or administrative users.
+
 
 ---
 
@@ -389,22 +291,22 @@ It looks like this:
 
    👉 **`618180422329.dkr.ecr.eu-west-3.amazonaws.com`**
 
-Use that for the GitHub secret `ECR_REGISTRY`.
+Use that for the GitHub secret `ECR_REGISTRY` in order to create automatically your repository..
 
 ---
 
 ## **5 – Add AWS Secrets to GitHub**
 
-In your GitHub repository:
-**Settings → Secrets and variables → Actions → New repository secret**
+In your GitHub repository (created in Lab 1):
+**Go to Settings → Secrets and variables → Actions → New repository secret**
 
 Create these entries:
 
 | Secret Name             | Example Value                                |
-| ----------------------- | -------------------------------------------- |
+| ----------------------- |----------------------------------------------|
 | `AWS_ACCESS_KEY_ID`     | AKIA…                                        |
 | `AWS_SECRET_ACCESS_KEY` | wJalr…                                       |
-| `AWS_REGION`            | eu-west-3                                    |
+| `AWS_REGION`            | your aws region                              |
 | `ECR_REGISTRY`          | 618180422329.dkr.ecr.eu-west-3.amazonaws.com |
 | `EKS_CLUSTER_NAME`      | voting-cluster                               |
 | `K8S_NAMESPACE`         | voting-app                                   |
@@ -415,39 +317,8 @@ All six should appear in your secrets list.
 
 ---
 
-## **6 – Prepare the Project Structure**
 
-```
-.
-├── .github/
-│   └── workflows/
-│       └── eks-cicd.yml
-├── voting-app/
-│   ├── Chart.yaml
-│   ├── values.yaml
-│   └── templates/
-│       ├── vote/
-│       ├── result/
-│       ├── worker/
-│       ├── redis/
-│       └── db/
-├── vote/
-│   └── Dockerfile
-├── vote-ui/
-│   └── Dockerfile
-├── result/
-│   └── Dockerfile
-├── result-ui/
-│   └── Dockerfile
-└── worker/
-    └── Dockerfile
-```
-
-Each service folder contains its Dockerfile from previous labs.
-
----
-
-## **7 – Create the GitHub Actions Workflow Step by Step**
+## **6 – Create the GitHub Actions Workflow Step by Step**
 
 Now we’ll automate the deployment of the **Voting App** to **AWS EKS** using **GitHub Actions**.
 The pipeline has **two jobs**:
@@ -460,7 +331,7 @@ Everything goes inside:
 
 ---
 
-### **7.1 – Define When the Workflow Runs**
+### **6.1 – Define When the Workflow Runs**
 
 We want to:
 
@@ -479,7 +350,7 @@ on:
 
 ---
 
-### **7.2 – Declare Global Environment Variables**
+### **6.2 – Declare Global Environment Variables**
 
 We’ll reuse these values multiple times across both jobs.
 
@@ -496,7 +367,7 @@ env:
 
 ---
 
-### **7.3 – Job 1: Build and Push Images**
+### **6.3 – Job 1: Build and Push Images**
 
 Name: `build-and-push`
 Goal: build the Docker images and push them to your **Amazon ECR** registry.
@@ -587,7 +458,7 @@ This loops over all five services, builds each image, tags it with the current c
 
 ---
 
-### **7.4 – Job 2: Deploy to EKS**
+### **6.4 – Job 2: Deploy to EKS**
 
 Name: `deploy-to-eks`
 Goal: deploy the latest Docker images using the Helm chart.
@@ -688,7 +559,7 @@ This tells Kubernetes to create an **internet-facing AWS LoadBalancer** for both
 
 ---
 
-### **7.5 – Complete Workflow File**
+### **6.5 – Complete Workflow File**
 
 Once you’ve understood each part, here’s the full workflow together:
 
@@ -803,121 +674,7 @@ jobs:
               kubectl get svc -n $K8S_NAMESPACE
 ```
 
----
-### **7.6 – Push the Helm Chart to Amazon ECR (as OCI Artifact)**
-
-In addition to Docker images, you can store your **Helm chart** directly inside Amazon ECR.
-Helm v3 supports OCI (Open Container Initiative) format, and ECR acts as a secure OCI registry.
-
-This step allows the chart to be versioned and pulled directly from ECR later — useful for multi-cluster deployments or other CI/CD tools.
-
----
-
-### **Step 1 – Enable Helm OCI Support**
-
-Helm v3 has it built-in, but you must set this environment variable:
-
-```bash
-export HELM_EXPERIMENTAL_OCI=1
-```
-
----
-
-### **Step 2 – Authenticate Helm to ECR**
-
-```bash
-aws ecr get-login-password --region $AWS_REGION | helm registry login --username AWS --password-stdin $ECR_REGISTRY
-```
-
----
-
-### **Step 3 – Package and Push the Chart**
-
-```bash
-helm package ./voting-app
-helm push voting-app-*.tgz oci://$ECR_REGISTRY/helm/voting-app
-```
-
-* `helm package` creates `voting-app-<version>.tgz` (based on Chart.yaml).
-* `helm push` uploads it to your ECR under the repository path `helm/voting-app`.
-
----
-
-### **Step 4 – Confirm Push**
-
-To verify that your Helm chart is stored:
-
-```bash
-helm pull oci://$ECR_REGISTRY/helm/voting-app --version <chart-version>
-```
-
-This ensures your chart is retrievable from ECR.
-
----
-
-### 💡 **Hint**
-
-You can later deploy directly from the ECR Helm repository instead of from source:
-
-```bash
-helm install voting oci://$ECR_REGISTRY/helm/voting-app --version <chart-version>
-```
-
----
-
-## **Updated YAML Workflow Snippet**
-
-Add this step to your GitHub Actions workflow right after image push (still inside the **build** job):
-
-```yaml
-- name: Push Helm chart to Amazon ECR (OCI)
-  env:
-    ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
-    AWS_REGION: ${{ secrets.AWS_REGION }}
-  run: |
-    export HELM_EXPERIMENTAL_OCI=1
-    aws ecr get-login-password --region $AWS_REGION | helm registry login --username AWS --password-stdin $ECR_REGISTRY
-    helm package ./voting-app
-    helm push $(ls voting-app-*.tgz) oci://$ECR_REGISTRY/helm/voting-app
-```
-
-This will:
-
-1. Log in to ECR for Helm.
-2. Package your chart.
-3. Push it to an OCI repository `helm/voting-app`.
-
----
-
-### **Bonus – Create the Helm Repository Automatically (optional)**
-
-If it doesn’t exist, ECR will create it automatically during the push, but you can also ensure it beforehand:
-
-```yaml
-- name: Ensure Helm ECR repo exists
-  run: |
-    aws ecr describe-repositories --repository-names helm/voting-app >/dev/null 2>&1 || \
-    aws ecr create-repository --repository-name helm/voting-app --region $AWS_REGION
-```
-
-Place it just before the `helm push` step.
-
----
-
-## **Result**
-
-After this addition, your CI/CD pipeline now performs:
-
-| Stage   | Action                           | Output                      |
-| ------- | -------------------------------- | --------------------------- |
-| Build   | Build and push 5 Docker images   | `ECR/<service>:<sha>`       |
-| Package | Package Helm chart               | `voting-app-<ver>.tgz`      |
-| Push    | Upload Helm chart to ECR (OCI)   | `ECR/helm/voting-app:<ver>` |
-| Deploy  | Install chart from source or ECR | Running pods on EKS         |
-
----
-
-## **8 – How It Works**
+## **7 – How It Works**
 
 | Step              | Description                                      |
 | ----------------- | ------------------------------------------------ |
@@ -932,7 +689,7 @@ After this addition, your CI/CD pipeline now performs:
 
 ---
 
-## **9 – Trigger the Pipeline**
+## **8 – Trigger the Pipeline**
 
 Commit and push:
 
@@ -952,7 +709,7 @@ Both should complete successfully.
 
 ---
 
-## **10 – Verify Deployment on EKS**
+## **9 – Verify Deployment on EKS**
 
 Check the application state:
 
@@ -977,7 +734,7 @@ You should see the voting interface.
 
 ---
 
-## **11 – Cleanup**
+## **10 – Cleanup**
 
 Remove all resources:
 
@@ -990,7 +747,7 @@ Optionally, delete ECR repositories from the AWS Console if you no longer need t
 
 ---
 
-## **12 – Summary**
+## **11 – Summary**
 
 | Component          | Role                                 |
 | ------------------ | ------------------------------------ |
