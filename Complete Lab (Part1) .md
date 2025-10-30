@@ -1,9 +1,3 @@
-Oui. Voici une version **plus développée**, en anglais, toujours **orientée apprentissage** :
-chaque section donne le contexte, les étapes à suivre, des explications, et un **hint** à ouvrir seulement en cas de blocage.
-Le tout est prêt à être intégré dans Moodle, MkDocs ou GitHub Pages.
-
----
-
 # **Complete Lab (Part 1) – From Docker Compose to Kubernetes and Helm Packaging**
 
 ---
