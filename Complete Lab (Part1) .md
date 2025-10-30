@@ -20,7 +20,7 @@ The base project you cloned already contains all the labs, source code, and conf
 
 ---
 
-### **2.1 – Clone the Starter Project**
+### **0.1 – Clone the Starter Project**
 
 Clone the shared training repository (provided by your instructor):
 
@@ -42,7 +42,7 @@ vote/, result/, worker/, etc.
 
 ---
 
-### **2.2 – Remove the Old Remote Origin**
+### **0.2 – Remove the Old Remote Origin**
 
 The cloned repository still points to the origin GitHub.
 You must detach it to push to your own account.
@@ -61,7 +61,7 @@ It should return nothing.
 
 ---
 
-### **2.3 – Create Your Own Repository on GitHub**
+### **0.3 – Create Your Own Repository on GitHub**
 
 1. Go to [https://github.com/new](https://github.com/new)
 2. Fill in:
@@ -81,7 +81,7 @@ It should return nothing.
 
 ---
 
-### **2.4 – Connect and Push Your Project**
+### **0.4 – Connect and Push Your Project**
 
 Back in your local project folder:
 
@@ -95,7 +95,7 @@ Your personal repository now contains the full Voting App lab environment.
 
 ---
 
-### **2.5 – Verify**
+### **0.5 – Verify**
 
 Check on your GitHub account — you should see:
 
