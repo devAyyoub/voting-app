@@ -804,7 +804,118 @@ jobs:
 ```
 
 ---
+### **7.6 – Push the Helm Chart to Amazon ECR (as OCI Artifact)**
 
+In addition to Docker images, you can store your **Helm chart** directly inside Amazon ECR.
+Helm v3 supports OCI (Open Container Initiative) format, and ECR acts as a secure OCI registry.
+
+This step allows the chart to be versioned and pulled directly from ECR later — useful for multi-cluster deployments or other CI/CD tools.
+
+---
+
+### **Step 1 – Enable Helm OCI Support**
+
+Helm v3 has it built-in, but you must set this environment variable:
+
+```bash
+export HELM_EXPERIMENTAL_OCI=1
+```
+
+---
+
+### **Step 2 – Authenticate Helm to ECR**
+
+```bash
+aws ecr get-login-password --region $AWS_REGION | helm registry login --username AWS --password-stdin $ECR_REGISTRY
+```
+
+---
+
+### **Step 3 – Package and Push the Chart**
+
+```bash
+helm package ./voting-app
+helm push voting-app-*.tgz oci://$ECR_REGISTRY/helm/voting-app
+```
+
+* `helm package` creates `voting-app-<version>.tgz` (based on Chart.yaml).
+* `helm push` uploads it to your ECR under the repository path `helm/voting-app`.
+
+---
+
+### **Step 4 – Confirm Push**
+
+To verify that your Helm chart is stored:
+
+```bash
+helm pull oci://$ECR_REGISTRY/helm/voting-app --version <chart-version>
+```
+
+This ensures your chart is retrievable from ECR.
+
+---
+
+### 💡 **Hint**
+
+You can later deploy directly from the ECR Helm repository instead of from source:
+
+```bash
+helm install voting oci://$ECR_REGISTRY/helm/voting-app --version <chart-version>
+```
+
+---
+
+## **Updated YAML Workflow Snippet**
+
+Add this step to your GitHub Actions workflow right after image push (still inside the **build** job):
+
+```yaml
+- name: Push Helm chart to Amazon ECR (OCI)
+  env:
+    ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+    AWS_REGION: ${{ secrets.AWS_REGION }}
+  run: |
+    export HELM_EXPERIMENTAL_OCI=1
+    aws ecr get-login-password --region $AWS_REGION | helm registry login --username AWS --password-stdin $ECR_REGISTRY
+    helm package ./voting-app
+    helm push $(ls voting-app-*.tgz) oci://$ECR_REGISTRY/helm/voting-app
+```
+
+This will:
+
+1. Log in to ECR for Helm.
+2. Package your chart.
+3. Push it to an OCI repository `helm/voting-app`.
+
+---
+
+### **Bonus – Create the Helm Repository Automatically (optional)**
+
+If it doesn’t exist, ECR will create it automatically during the push, but you can also ensure it beforehand:
+
+```yaml
+- name: Ensure Helm ECR repo exists
+  run: |
+    aws ecr describe-repositories --repository-names helm/voting-app >/dev/null 2>&1 || \
+    aws ecr create-repository --repository-name helm/voting-app --region $AWS_REGION
+```
+
+Place it just before the `helm push` step.
+
+---
+
+## **Result**
+
+After this addition, your CI/CD pipeline now performs:
+
+| Stage   | Action                           | Output                      |
+| ------- | -------------------------------- | --------------------------- |
+| Build   | Build and push 5 Docker images   | `ECR/<service>:<sha>`       |
+| Package | Package Helm chart               | `voting-app-<ver>.tgz`      |
+| Push    | Upload Helm chart to ECR (OCI)   | `ECR/helm/voting-app:<ver>` |
+| Deploy  | Install chart from source or ECR | Running pods on EKS         |
+
+---
 
 ## **8 – How It Works**
 
