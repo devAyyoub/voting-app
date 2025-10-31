@@ -1,0 +1,301 @@
+---
+# Source: voting-app/templates/db/secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db
+type: Opaque
+stringData:
+  username: "postgres"
+  password: "postgres"
+---
+# Source: voting-app/templates/db/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  labels:
+    app: db
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: db
+---
+# Source: voting-app/templates/redis/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: 6379
+  selector:
+    app: redis
+---
+# Source: voting-app/templates/result-ui/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: result-ui
+  labels:
+    app: result-ui
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 31001
+  selector:
+    app: result-ui
+---
+# Source: voting-app/templates/result/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: result
+  labels:
+    app: result
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5000
+      targetPort: 5000
+  selector:
+    app: result
+---
+# Source: voting-app/templates/vote-ui/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: vote-ui
+  labels:
+    app: vote-ui
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 31000
+  selector:
+    app: vote-ui
+---
+# Source: voting-app/templates/vote/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: vote
+  labels:
+    app: vote
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5000
+      targetPort: 5000
+  selector:
+    app: vote
+---
+# Source: voting-app/templates/db/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  labels:
+    app: db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+    spec:
+      containers:
+        - name: db
+          image: "postgres:15.0-alpine3.16"
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db
+                  key: password
+---
+# Source: voting-app/templates/redis/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: "redis:7.0.7-alpine3.17"
+          ports:
+            - containerPort: 6379
+---
+# Source: voting-app/templates/result-ui/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: result-ui
+  labels:
+    app: result-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: result-ui
+  template:
+    metadata:
+      labels:
+        app: result-ui
+    spec:
+      containers:
+        - name: result-ui
+          image: "voting/result-ui:v1.0.15"
+          ports:
+            - containerPort: 80
+---
+# Source: voting-app/templates/result/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: result
+  labels:
+    app: result
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: result
+  template:
+    metadata:
+      labels:
+        app: result
+    spec:
+      containers:
+        - name: result
+          image: "voting/result:v1.0.16"
+          ports:
+            - containerPort: 5000
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db
+                  key: password
+---
+# Source: voting-app/templates/vote-ui/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vote-ui
+  labels:
+    app: vote-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vote-ui
+  template:
+    metadata:
+      labels:
+        app: vote-ui
+    spec:
+      containers:
+        - name: vote-ui
+          image: "voting/vote-ui:v1.0.19"
+          ports:
+            - containerPort: 80
+---
+# Source: voting-app/templates/vote/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vote
+  labels:
+    app: vote
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vote
+  template:
+    metadata:
+      labels:
+        app: vote
+    spec:
+      containers:
+        - name: vote
+          image: "voting/vote:v1.0.13"
+          ports:
+            - containerPort: 5000
+          env:
+            - name: REDIS_HOST
+              value: "redis"
+---
+# Source: voting-app/templates/worker/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    app: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: "voting/worker:v1.0.15"
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db
+                  key: password
+            - name: REDIS_HOST
+              value: "redis"
+            - name: DB_HOST
+              value: "db"
