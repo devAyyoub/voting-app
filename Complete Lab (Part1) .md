@@ -1373,7 +1373,7 @@ To publish a Helm chart to GitHub Container Registry (GHCR), you first need a Pe
 6. Click **Generate token**
 7. Copy the token — it will start with `ghp_...`
 
-![img_1.png](img_1.png)
+![img_1.png](images/ghcr_img1.png)
 
 ---
 
@@ -1436,7 +1436,7 @@ helm push .\voting-app-0.1.0.tgz oci://ghcr.io/<username>/helm
 ```
 
 Expected output:
-![img.png](img.png)
+![img.png](images/ghcr_img0.png)
 
 ```
 Pushed: ghcr.io/<username>/helm/voting-app:0.1.0
