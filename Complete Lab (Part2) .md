@@ -718,7 +718,7 @@ kubectl get pods -n voting-app
 kubectl get svc -n voting-app
 ```
 
-If your `vote-ui` and `result-ui` services are **NodePort** or **LoadBalancer**, display the external address:
+Display the external address for `vote-ui` and `result-ui`:
 
 ```bash
 kubectl get svc vote-ui -n voting-app
