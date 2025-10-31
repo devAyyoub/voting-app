@@ -327,7 +327,8 @@ The pipeline has **two jobs**:
 2. **Deploy to EKS** → deploy and upgrade the Helm chart on your EKS cluster
 
 Everything goes inside:
-`.github/workflows/eks-cicd.yml`
+
+The Workflow shoud be located under the following path `.github/workflows/eks-cicd.yml`
 
 ---
 
