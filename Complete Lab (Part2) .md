@@ -356,10 +356,12 @@ We’ll reuse these values multiple times across both jobs.
 
 ```yaml
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
-  K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
-  IMAGE_TAG: ${{ github.sha }}
+   AWS_REGION: ${{ secrets.AWS_REGION }}
+   ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+   EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+   K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
+   IMAGE_TAG: ${{ github.sha }}
+
 ```
 
 💡 **Hint:**
@@ -404,9 +406,8 @@ This authenticates your workflow to AWS using the secrets you added earlier.
 #### Step 3 – Log in to Amazon ECR
 
 ```yaml
-- name: Log in to Amazon ECR
-  id: login-ecr
-  uses: aws-actions/amazon-ecr-login@v2
+aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+
 ```
 
 💡 This automatically runs `docker login` with your ECR credentials.
@@ -436,21 +437,23 @@ This makes your workflow **idempotent** — you can rerun it without errors even
 #### Step 5 – Build and Push Docker Images
 
 ```yaml
-- name: Build and Push Docker images
-  env:
-    ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+- name: Build and Push Multi-Arch Docker Images
   run: |
-    SERVICES=("vote" "vote-ui" "result" "result-ui" "worker")
-    for SERVICE in "${SERVICES[@]}"; do
-      IMAGE_URI="$ECR_REGISTRY/$SERVICE:${IMAGE_TAG}"
-      echo "Building $SERVICE → $IMAGE_URI"
-      if [ "$SERVICE" = "worker" ]; then
-        docker build -t "$IMAGE_URI" -f "./$SERVICE/src/Dockerfile" "./$SERVICE/src"
-      else
-        docker build -t "$IMAGE_URI" "./$SERVICE"
-      fi
-      docker push "$IMAGE_URI"
-    done
+     for svc in vote vote-ui result result-ui worker; do
+       echo "Building $svc → $ECR_REGISTRY/$svc:$IMAGE_TAG"
+       if [ "$svc" = "worker" ]; then
+         docker buildx build --platform linux/amd64,linux/arm64 \
+           --cache-from type=local,src=/tmp/.buildx-cache \
+           --cache-to type=local,dest=/tmp/.buildx-cache,mode=max \
+           -t $ECR_REGISTRY/$svc:$IMAGE_TAG \
+           -f "./$svc/src/Dockerfile" "./$svc/src" --push
+       else
+         docker buildx build --platform linux/amd64,linux/arm64 \
+           --cache-from type=local,src=/tmp/.buildx-cache \
+           --cache-to type=local,dest=/tmp/.buildx-cache,mode=max \
+           -t $ECR_REGISTRY/$svc:$IMAGE_TAG "./$svc" --push
+       fi
+     done
 ```
 
 💡 **Hint:**
@@ -466,7 +469,7 @@ Goal: deploy the latest Docker images using the Helm chart.
 We make this job **depend on** the previous one:
 
 ```yaml
-needs: build-and-push
+needs: build
 ```
 
 ---
@@ -507,23 +510,23 @@ needs: build-and-push
 #### Step 4 – Deploy the Helm Chart
 
 ```yaml
-- name: Deploy Helm Chart
-  env:
-    ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+- name: Deploy via Helm
   run: |
-    helm upgrade --install voting ./voting-app \
-      --namespace ${{ secrets.K8S_NAMESPACE }} \
-      --create-namespace \
-      --set vote.image.repository=$ECR_REGISTRY/vote \
-      --set vote.image.tag=${{ github.sha }} \
-      --set voteUi.image.repository=$ECR_REGISTRY/vote-ui \
-      --set voteUi.image.tag=${{ github.sha }} \
-      --set result.image.repository=$ECR_REGISTRY/result \
-      --set result.image.tag=${{ github.sha }} \
-      --set resultUi.image.repository=$ECR_REGISTRY/result-ui \
-      --set resultUi.image.tag=${{ github.sha }} \
-      --set worker.image.repository=$ECR_REGISTRY/worker \
-      --set worker.image.tag=${{ github.sha }}
+     echo "Using registry: $ECR_REGISTRY"
+     helm upgrade --install voting ./voting-app \
+       --namespace $K8S_NAMESPACE --create-namespace \
+       --set vote.image.repository=$ECR_REGISTRY/vote \
+       --set vote.image.tag=$IMAGE_TAG \
+       --set voteUi.image.repository=$ECR_REGISTRY/vote-ui \
+       --set voteUi.image.tag=$IMAGE_TAG \
+       --set result.image.repository=$ECR_REGISTRY/result \
+       --set result.image.tag=$IMAGE_TAG \
+       --set resultUi.image.repository=$ECR_REGISTRY/result-ui \
+       --set resultUi.image.tag=$IMAGE_TAG \
+       --set worker.image.repository=$ECR_REGISTRY/worker \
+       --set worker.image.tag=$IMAGE_TAG \
+       --set voteUi.service.type=LoadBalancer \
+       --set resultUi.service.type=LoadBalancer
 ```
 
 By default, the Helm chart exposes **UI services** (`vote-ui`, `result-ui`) as `NodePort` — suitable for local clusters (like Minikube).
@@ -615,23 +618,24 @@ jobs:
                 aws ecr create-repository --repository-name $repo --region $AWS_REGION
               done
 
-         - name: Build and Push ARM64 Docker Images
+         - name: Build and Push Multi-Arch Docker Images
            run: |
               for svc in vote vote-ui result result-ui worker; do
                 echo "Building $svc → $ECR_REGISTRY/$svc:$IMAGE_TAG"
                 if [ "$svc" = "worker" ]; then
-                  docker buildx build --platform linux/arm64 \
+                  docker buildx build --platform linux/amd64,linux/arm64 \
                     --cache-from type=local,src=/tmp/.buildx-cache \
                     --cache-to type=local,dest=/tmp/.buildx-cache,mode=max \
                     -t $ECR_REGISTRY/$svc:$IMAGE_TAG \
                     -f "./$svc/src/Dockerfile" "./$svc/src" --push
                 else
-                  docker buildx build --platform linux/arm64 \
+                  docker buildx build --platform linux/amd64,linux/arm64 \
                     --cache-from type=local,src=/tmp/.buildx-cache \
                     --cache-to type=local,dest=/tmp/.buildx-cache,mode=max \
                     -t $ECR_REGISTRY/$svc:$IMAGE_TAG "./$svc" --push
                 fi
               done
+
 
    deploy:
       name: Deploy Voting App to AWS EKS
@@ -672,6 +676,7 @@ jobs:
            run: |
               kubectl get pods -n $K8S_NAMESPACE
               kubectl get svc -n $K8S_NAMESPACE
+
 ```
 
 ## **7 – How It Works**
@@ -717,9 +722,9 @@ Check the application state:
 kubectl get pods -n voting-app
 kubectl get svc -n voting-app
 ```
+The LoadBalancer external IP may take several minutes to become available. Once it appears, you can open the voting UI in your browser.
 
 Display the external address for `vote-ui` and `result-ui`:
-
 ```bash
 kubectl get svc vote-ui -n voting-app
 ```
