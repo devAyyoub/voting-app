@@ -732,6 +732,8 @@ http://<EXTERNAL-IP>:80
 
 You should see the voting interface.
 
+![img.png](img.png)
+
 ---
 
 ## **10 – Cleanup**
