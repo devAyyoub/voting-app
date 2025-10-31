@@ -40,7 +40,7 @@ jobs:
             ${{ runner.os }}-buildx-
 
       - name: Login to Amazon ECR
-        run: aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin 618180422329.dkr.ecr.eu-north-1.amazonaws.com
+        run: aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
 
       - name: Ensure ECR repositories exist
         run: |
@@ -49,23 +49,24 @@ jobs:
             aws ecr create-repository --repository-name $repo --region $AWS_REGION
           done
 
-      - name: Build and Push ARM64 Docker Images
+      - name: Build and Push Multi-Arch Docker Images
         run: |
           for svc in vote vote-ui result result-ui worker; do
             echo "Building $svc → $ECR_REGISTRY/$svc:$IMAGE_TAG"
             if [ "$svc" = "worker" ]; then
-              docker buildx build --platform linux/arm64 \
+              docker buildx build --platform linux/amd64,linux/arm64 \
                 --cache-from type=local,src=/tmp/.buildx-cache \
                 --cache-to type=local,dest=/tmp/.buildx-cache,mode=max \
                 -t $ECR_REGISTRY/$svc:$IMAGE_TAG \
                 -f "./$svc/src/Dockerfile" "./$svc/src" --push
             else
-              docker buildx build --platform linux/arm64 \
+              docker buildx build --platform linux/amd64,linux/arm64 \
                 --cache-from type=local,src=/tmp/.buildx-cache \
                 --cache-to type=local,dest=/tmp/.buildx-cache,mode=max \
                 -t $ECR_REGISTRY/$svc:$IMAGE_TAG "./$svc" --push
             fi
           done
+
 
   deploy:
     name: Deploy Voting App to AWS EKS
